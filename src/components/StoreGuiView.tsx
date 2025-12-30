@@ -831,7 +831,6 @@ actorLayer.addChild(g);
 
       drawStatic();
       renderShelfStock();
-      startAnimationForThisTick();
 
       // ---- UI text (MVP) ----
       const hudText = new PIXI.Text({
@@ -856,6 +855,8 @@ actorLayer.addChild(g);
           `Spawned: ${customersSpawned}`;
       };
       updateHud();
+
+      startAnimationForThisTick();
 
       // ---- queue helpers ----
       const baseSpeed = 190;
