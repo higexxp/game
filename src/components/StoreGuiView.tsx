@@ -520,6 +520,8 @@ export default function StoreGuiView() {
       const itemLayer = new PIXI.Container();
       itemLayer.zIndex = 50;
       const fxLayer = new PIXI.Container();
+      const uiLayer = new PIXI.Container();
+      uiLayer.zIndex = 100;
       world.addChild(floorLayer);
       world.addChild(staticLayer);
       world.addChild(shelfStockLayer);
@@ -527,6 +529,7 @@ export default function StoreGuiView() {
       world.addChild(actorLayer);
       world.addChild(itemLayer);
       world.addChild(fxLayer);
+      world.addChild(uiLayer);
 
       world.sortChildren();
       const floor = new PIXI.Graphics();
@@ -677,6 +680,13 @@ actorLayer.addChild(g);
       // ★到着順キュー（FIFO）
       const q1: Actor[] = [];
       const q2: Actor[] = [];
+
+      // ---- economy / counters (MVP) ----
+      let totalSales = 0;
+      let customersServed = 0;
+      let customersSpawned = 0;
+      const pricePerCheckout = 300; // MVP: fixed price per customer
+
       const qRef = (cid: CounterId) => (cid === "counter_1" ? q1 : q2);
 
       // ★押し合い防止：前の人に近づきすぎたら前進しない（waitQueue用）
@@ -772,6 +782,7 @@ actorLayer.addChild(g);
         const MAX_ANIM = 12;
         const count = Math.min(MAX_ANIM, Math.max(0, n));
         for (let i = 0; i < count; i++) {
+          customersSpawned += 1;
           const g = makePersonSprite("/sprites/person_idle.png");
           placePerson(g, centerOf(entrance).x, centerOf(entrance).y);
           actorLayer.addChild(g);
@@ -783,12 +794,14 @@ actorLayer.addChild(g);
 
           actors.push({ g, kind: "served", phase: "toShelf", targetShelfId, queueIndex: i, queued: false });
         }
+        updateHud();
       };
 
       const spawnLost = (n: number) => {
         const MAX_ANIM = 10;
         const count = Math.min(MAX_ANIM, Math.max(0, n));
         for (let i = 0; i < count; i++) {
+          customersSpawned += 1;
           const g = makePersonSprite("/sprites/person_lost.png");
           g.alpha = 0.55;
           g.x = centerOf(entrance).x;
@@ -797,6 +810,7 @@ actorLayer.addChild(g);
 
           actors.push({ g, kind: "lost", phase: "toQueueFront", queueIndex: i });
         }
+        updateHud();
       };
 
       const clearActors = () => {
@@ -817,6 +831,31 @@ actorLayer.addChild(g);
 
       drawStatic();
       renderShelfStock();
+
+      // ---- UI text (MVP) ----
+      const hudText = new PIXI.Text({
+        text: "",
+        style: new PIXI.TextStyle({
+          fontFamily: "monospace",
+          fontSize: 14,
+          fill: 0xffffff,
+          stroke: 0x000000,
+          strokeThickness: 4,
+        }),
+      });
+      hudText.x = 12;
+      hudText.y = 10;
+      hudText.zIndex = 101;
+      uiLayer.addChild(hudText);
+
+      const updateHud = () => {
+        hudText.text =
+          `Sales: ¥${totalSales}\n` +
+          `Served: ${customersServed}\n` +
+          `Spawned: ${customersSpawned}`;
+      };
+      updateHud();
+
       startAnimationForThisTick();
 
       // ---- queue helpers ----
@@ -1326,13 +1365,18 @@ actorLayer.addChild(g);
             // ★checkout中も会計位置に固定（レジ内部に入らない）
             g.x = counterPos.x;
             g.y = counterPos.y;
-            a.checkoutLeft = Math.max(0, (a.checkoutLeft ?? 0) - dt);
-            if ((a.checkoutLeft ?? 0) <= 0.001) {
-              playCheckoutDoneSfx(sfxRef, cid === "counter_1" ? "L" : "R");
-              attachBagIcon(a);
-              a.phase = "toExit";
-            }
-          } else if (a.phase === "toExit") {
+              a.checkoutLeft = Math.max(0, (a.checkoutLeft ?? 0) - dt);
+              if ((a.checkoutLeft ?? 0) <= 0.001) {
+                // ---- PR-2: Sales add on checkout complete ----
+                totalSales += pricePerCheckout;
+                customersServed += 1;
+                updateHud();
+
+                playCheckoutDoneSfx(sfxRef, cid === "counter_1" ? "L" : "R");
+                attachBagIcon(a);
+                a.phase = "toExit";
+              }
+            } else if (a.phase === "toExit") {
             const ok = moveToward(g, exitPos.x, exitPos.y, dtMove, 1.05);
             if (ok) destroyActor(a);
           }
