@@ -835,14 +835,14 @@ actorLayer.addChild(g);
         return false;
       };
 
+      // PR-1: Use checkoutSpot for toCounter/checkout to prevent entering counter area
       const spacingFor = (queueSize: number) => clamp(16 - Math.max(0, queueSize - 6) * 1.2, 9, 16);
 
       const queueBaseFor = (cid: CounterId) => cid === "counter_1" ? queueBase1 : queueBase2;
       const checkoutSpotFor = (cid: CounterId) => (cid === "counter_1" ? checkoutSpot1 : checkoutSpot2);
-      const counterPosFor = (cid: CounterId) => {
-        const c = cid === "counter_1" ? counter1 : counter2;
-        return { x: centerOf(c).x, y: centerOf(c).y + 10 };
-      };
+      // ★重要: 会計位置は「レジ台の外側」に固定（レジ内部・店員背後へ侵入しない）
+      // counterPosFor は廃止し、checkoutSpot を唯一の真実にする
+      const counterPosFor = (cid: CounterId) => checkoutSpotFor(cid);
       const serviceSpeedFor = (cid: CounterId) => cid === "counter_1" ? serviceSpeed1 : serviceSpeed2;
 
       // ★レジ占有：同時にcheckoutできるのは各レジ1人だけ
@@ -1201,7 +1201,7 @@ actorLayer.addChild(g);
           const qx = base.x;
           const qy = base.y + rank * spacing;
 
-          const counterPos = counterPosFor(cid);
+          const counterPos = counterPosFor(cid); // = checkoutSpotFor(cid)
           const exitPos = centerOf(exit);
 
           if (a.phase === "toQueue") {
@@ -1266,7 +1266,7 @@ actorLayer.addChild(g);
             a.waitLeft = Math.max(0, (a.waitLeft ?? 0) - dt);
 
             // ★先頭だけがレジへ
-                        if ((a.waitLeft ?? 0) <= 0.001 && rr === 0) {
+            if ((a.waitLeft ?? 0) <= 0.001 && rr === 0) {
               // ★無人レジなら進めない：有人レジへ誘導
               if (!hasStaffFor(cid)) {
                 const other: CounterId = cid === "counter_1" ? "counter_2" : "counter_1";
@@ -1277,10 +1277,10 @@ actorLayer.addChild(g);
                 a.lookAroundLeft = Math.max(a.lookAroundLeft ?? 0, 0.85);
                 a.switchTintLeft = Math.max(a.switchTintLeft ?? 0, 1.10);
               } else {
-              // キュー先頭から除去（安全に）
-              const q = qRef(cid);
-              if (q[0] === a) q.shift(); else qRemove(cid, a);
-                              a.phase = "toCounter";
+                // キュー先頭から除去（安全に）
+                const q = qRef(cid);
+                if (q[0] === a) q.shift(); else qRemove(cid, a);
+                a.phase = "toCounter";
               }
             }
           } else if (a.phase === "toCounter") {
@@ -1295,9 +1295,9 @@ actorLayer.addChild(g);
               break;
             }
 
-
+            // ★会計位置へ（レジ台の外側 / checkoutSpot）
             const ok = moveToward(g, counterPos.x, counterPos.y, dtMove, 1.05);
-                        if (ok) {
+            if (ok) {
               // ★無人レジならcheckout開始しない：有人レジへ誘導
               if (!hasStaffFor(cid)) {
                 const other: CounterId = cid === "counter_1" ? "counter_2" : "counter_1";
@@ -1323,6 +1323,7 @@ actorLayer.addChild(g);
               playCheckoutSfx(sfxRef, cid === "counter_1" ? "L" : "R");
             }
           } else if (a.phase === "checkout") {
+            // ★checkout中も会計位置に固定（レジ内部に入らない）
             g.x = counterPos.x;
             g.y = counterPos.y;
             a.checkoutLeft = Math.max(0, (a.checkoutLeft ?? 0) - dt);
