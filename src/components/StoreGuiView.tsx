@@ -29,12 +29,9 @@ const makePersonSprite = (src: string) => {
 };
 
 // ★SPRITE: place person by "foot" position (x,y = where feet touch the floor)
-// We treat inputs as "footX/footY". With anchor(0.5,1.0), the sprite's top is y - height,
-// so we set sprite.y = footY + height to match older "center-based" coordinates.
 const placePerson = (sp: any, footX: number, footY: number) => {
   sp.x = footX;
-  const h = (typeof sp.height === "number" && isFinite(sp.height)) ? sp.height : 0;
-  sp.y = footY + h;
+  sp.y = footY;
 };
 
 
@@ -215,7 +212,7 @@ type Phase =
 type LostPhase = "toQueueFront" | "uTurn" | "done";
 
 type Actor = {
-  g: PIXI.Graphics;
+  g: PIXI.Sprite;
   kind: "served" | "lost";
   phase: Phase | LostPhase;
 
@@ -354,6 +351,15 @@ export default function StoreGuiView() {
 
   // GUI tick ボタンを押した回数（初期表示は動かさない）
   const [tickSeq, setTickSeq] = useState(0);
+
+  type MvpResult = {
+    salesYen: number;
+    customersSpawned: number;
+    customersServed: number;
+    customersLost: number;
+  };
+
+  const [mvpResult, setMvpResult] = useState<MvpResult | null>(null);
 
   // --- MVP: 1日シミュレーション ---
   // runDaySeq をインクリメントすると Pixi 側を「日次シミュ」モードで再初期化する
@@ -595,8 +601,8 @@ export default function StoreGuiView() {
       const localShelfStock = new Map<string, number>();
       for (const sid of shelfIds) localShelfStock.set(sid, shelfStock?.[sid] ?? 0);
 
-      let staffDots1: PIXI.Graphics[] = [];
-      let staffDots2: PIXI.Graphics[] = [];
+      let staffDots1: PIXI.Sprite[] = [];
+      let staffDots2: PIXI.Sprite[] = [];
 
       const clearContainer = (c: PIXI.Container) => {
         while (c.children.length) {
@@ -605,8 +611,8 @@ export default function StoreGuiView() {
         }
       };
 
-      const drawStaffDots = (counter: Rect, staffN: number): PIXI.Graphics[] => {
-        const dots: PIXI.Graphics[] = [];
+      const drawStaffDots = (counter: Rect, staffN: number): PIXI.Sprite[] => {
+        const dots: PIXI.Sprite[] = [];
         const staffR = 8;
         const staffGap = 18;
         const baseX = centerOf(counter).x - ((staffN - 1) * staffGap) / 2;
@@ -617,7 +623,7 @@ export default function StoreGuiView() {
           (g as any).__baseY = g.y;
           (g as any).__baseX = g.x;
           g.alpha = 1;
-actorLayer.addChild(g);
+          staffLayer.addChild(g);
           dots.push(g);
         }
         return dots;
@@ -715,6 +721,15 @@ actorLayer.addChild(g);
 
       // ---- actors & fx ----
       const actors: Actor[] = [];
+
+      // ---- MVP counters (per run) ----
+      let mvpSalesYen = 0;
+      let mvpSpawned = 0;
+      let mvpServed = 0;
+      let mvpLost = 0;
+      let mvpRunActive = false;
+      const MVP_PRICE_PER_CHECKOUT = 300;
+
       const pops: PopFx[] = [];
 
       // ★到着順キュー（FIFO）
@@ -819,6 +834,7 @@ actorLayer.addChild(g);
       };
 
       const spawnServed = (n: number) => {
+        mvpSpawned += Math.max(0, n);
         const MAX_ANIM = 12;
         const count = Math.min(MAX_ANIM, Math.max(0, n));
         for (let i = 0; i < count; i++) {
@@ -838,6 +854,8 @@ actorLayer.addChild(g);
       };
 
       const spawnLost = (n: number) => {
+        mvpSpawned += Math.max(0, n);
+        mvpLost += Math.max(0, n);
         const MAX_ANIM = 10;
         const count = Math.min(MAX_ANIM, Math.max(0, n));
         for (let i = 0; i < count; i++) {
@@ -864,7 +882,16 @@ actorLayer.addChild(g);
 
       const startAnimationForThisTick = () => {
         clearActors();
+        // reset per-run counters
+        mvpSalesYen = 0;
+        mvpSpawned = 0;
+        mvpServed = 0;
+        mvpLost = 0;
+        mvpRunActive = false;
+        setMvpResult(null);
+
         if (tickSeq <= 0) return;
+        mvpRunActive = true;
         spawnLost(lost);
         spawnServed(served);
       };
@@ -1034,7 +1061,7 @@ actorLayer.addChild(g);
       // ---- staff busy ----
       let tAccum = 0;
 
-      const setStaffIdle = (dots: PIXI.Graphics[]) => {
+      const setStaffIdle = (dots: PIXI.Sprite[]) => {
         for (const d of dots) {
           const bx = (d as any).__baseX ?? d.x;
           const by = (d as any).__baseY ?? d.y;
@@ -1045,7 +1072,7 @@ actorLayer.addChild(g);
         }
       };
 
-      const setStaffBusy = (dots: PIXI.Graphics[], phaseOffset: number) => {
+      const setStaffBusy = (dots: PIXI.Sprite[], phaseOffset: number) => {
         for (let i = 0; i < dots.length; i++) {
           const d = dots[i];
           const bx = (d as any).__baseX ?? d.x;
@@ -1464,6 +1491,10 @@ actorLayer.addChild(g);
                 playCheckoutDoneSfx(sfxRef, cid === "counter_1" ? "L" : "R");
                 attachBagIcon(a);
 
+                // ---- MVP: sales & served ----
+                mvpSalesYen += MVP_PRICE_PER_CHECKOUT;
+                mvpServed += 1;
+
                 // PR-4（PR-2最小）: 会計完了をカウントし売上加算
                 // ※すでにあなたのPR-2で売上加算が入っているなら、ここは削除/無効化してください（重複防止）
                 _servedDone += 1;
@@ -1592,6 +1623,17 @@ actorLayer.addChild(g);
           }
         }
 
+        // ---- MVP: publish result when the current run ends ----
+        if (mvpRunActive && actors.length === 0 && pops.length === 0) {
+          mvpRunActive = false;
+          setMvpResult({
+            salesYen: mvpSalesYen,
+            customersSpawned: mvpSpawned,
+            customersServed: mvpServed,
+            customersLost: mvpLost,
+          });
+        }
+
         // PR-4: すべての客がいなくなったら、この回の結果を確定して表示
         if (tickSeq > 0 && actors.length === 0 && (_servedDone + _lostDone) > 0) {
           pushResultOnce();
@@ -1700,6 +1742,43 @@ actorLayer.addChild(g);
           touchAction: "none",
         }}
       />
+
+      {mvpResult && (
+        <div
+          style={{
+            position: "absolute",
+            right: 12,
+            top: 12,
+            background: "rgba(255,255,255,0.92)",
+            border: "1px solid #ddd",
+            borderRadius: 10,
+            padding: "10px 12px",
+            fontSize: 13,
+            lineHeight: 1.5,
+            minWidth: 220,
+            boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>リザルト（MVP）</div>
+          <div>売上: ¥{mvpResult.salesYen.toLocaleString()}</div>
+          <div>来客（生成）: {mvpResult.customersSpawned}</div>
+          <div>会計完了: {mvpResult.customersServed}</div>
+          <div>欠品/離脱: {mvpResult.customersLost}</div>
+          <button
+            onClick={() => setMvpResult(null)}
+            style={{
+              marginTop: 8,
+              padding: "6px 10px",
+              borderRadius: 8,
+              border: "1px solid #ccc",
+              background: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            閉じる
+          </button>
+        </div>
+      )}
     </div>
   );
 }
