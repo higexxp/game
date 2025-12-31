@@ -604,8 +604,8 @@ export default function StoreGuiView() {
       const localShelfStock = new Map<string, number>();
       for (const sid of shelfIds) localShelfStock.set(sid, shelfStock?.[sid] ?? 0);
 
-      let staffDots1: PIXI.Graphics[] = [];
-      let staffDots2: PIXI.Graphics[] = [];
+      let staffDots1: PIXI.Sprite[] = [];
+      let staffDots2: PIXI.Sprite[] = [];
 
       const clearContainer = (c: PIXI.Container) => {
         while (c.children.length) {
@@ -614,8 +614,8 @@ export default function StoreGuiView() {
         }
       };
 
-      const drawStaffDots = (counter: Rect, staffN: number): PIXI.Graphics[] => {
-        const dots: PIXI.Graphics[] = [];
+      const drawStaffDots = (counter: Rect, staffN: number): PIXI.Sprite[] => {
+        const dots: PIXI.Sprite[] = [];
         const staffR = 8;
         const staffGap = 18;
         const baseX = centerOf(counter).x - ((staffN - 1) * staffGap) / 2;
@@ -1064,7 +1064,7 @@ export default function StoreGuiView() {
       // ---- staff busy ----
       let tAccum = 0;
 
-      const setStaffIdle = (dots: PIXI.Graphics[]) => {
+      const setStaffIdle = (dots: PIXI.Sprite[]) => {
         for (const d of dots) {
           const bx = (d as any).__baseX ?? d.x;
           const by = (d as any).__baseY ?? d.y;
@@ -1075,7 +1075,7 @@ export default function StoreGuiView() {
         }
       };
 
-      const setStaffBusy = (dots: PIXI.Graphics[], phaseOffset: number) => {
+      const setStaffBusy = (dots: PIXI.Sprite[], phaseOffset: number) => {
         for (let i = 0; i < dots.length; i++) {
           const d = dots[i];
           const bx = (d as any).__baseX ?? d.x;
