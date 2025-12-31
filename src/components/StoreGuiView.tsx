@@ -347,6 +347,23 @@ export default function StoreGuiView() {
 
   // GUI tick ボタンを押した回数（初期表示は動かさない）
   const [tickSeq, setTickSeq] = useState(0);
+
+  // --- MVP: 1日シミュレーション ---
+  // runDaySeq をインクリメントすると Pixi 側を「日次シミュ」モードで再初期化する
+  const [runDaySeq, setRunDaySeq] = useState(0);
+  const [daySimRunning, setDaySimRunning] = useState(false);
+  const [daySimResult, setDaySimResult] = useState<null | {
+    spawned: number;
+    served: number;
+  }>(null);
+
+  const onRunDaySim = () => {
+    ensureSfx(sfxRef);
+    setDaySimResult(null);
+    setDaySimRunning(true);
+    setRunDaySeq((n) => n + 1);
+  };
+
   const onGuiNext = () => {
     ensureSfx(sfxRef);
     setTickSeq((n) => n + 1);
@@ -832,6 +849,30 @@ actorLayer.addChild(g);
       drawStatic();
       renderShelfStock();
 
+      // --- MVP: 日次シミュレーション用の内部状態 ---
+      const simEnabled = runDaySeq > 0;
+      const SIM_DAY_SECONDS = 60;      // 1日=60秒（MVP）
+      const SIM_SPAWN_INTERVAL = 1.2;  // 客発生間隔（秒）
+      let simOpen = false;
+      let simTimeLeft = 0;
+      let simSpawnAcc = 0;
+      let simSpawned = 0;
+      let simServed = 0;
+      let simReported = false;
+
+      const startDaySim = () => {
+        clearActors();
+        simOpen = true;
+        simTimeLeft = SIM_DAY_SECONDS;
+        simSpawnAcc = 0;
+        simSpawned = 0;
+        simServed = 0;
+        simReported = false;
+      };
+
+      if (simEnabled) startDaySim();
+      else startAnimationForThisTick();
+
       // ---- UI text (MVP) ----
       const hudText = new PIXI.Text({
         text: "",
@@ -855,8 +896,6 @@ actorLayer.addChild(g);
           `Spawned: ${customersSpawned}`;
       };
       updateHud();
-
-      startAnimationForThisTick();
 
       // ---- queue helpers ----
       const baseSpeed = 190;
@@ -1001,9 +1040,32 @@ actorLayer.addChild(g);
       // ---- ticker ----
       app.ticker.add((t) => {
         if (cancelled) return;
-        const dt = t.deltaMS / 1000;
+        const dt = Math.min(0.05, (t as any).deltaMS / 1000); // seconds
         tickMoneyPops(dt);
         tAccum += dt;
+
+        // --- MVP: 日次シミュ（客発生→終了→結果） ---
+        if (simEnabled) {
+          if (simOpen) {
+            simTimeLeft = Math.max(0, simTimeLeft - dt);
+            simSpawnAcc += dt;
+            while (simSpawnAcc >= SIM_SPAWN_INTERVAL) {
+              simSpawnAcc -= SIM_SPAWN_INTERVAL;
+              spawnServed(1);
+              simSpawned += 1;
+            }
+            if (simTimeLeft <= 0.001) {
+              simOpen = false; // 新規スポーン停止
+            }
+          } else {
+            // 既存客が全員はけたら日次終了
+            if (!simReported && actors.length === 0) {
+              simReported = true;
+              setDaySimRunning(false);
+              setDaySimResult({ spawned: simSpawned, served: simServed });
+            }
+          }
+        }
 
         // fx update
         for (let i = pops.length - 1; i >= 0; i--) {
@@ -1374,6 +1436,11 @@ actorLayer.addChild(g);
 
                 playCheckoutDoneSfx(sfxRef, cid === "counter_1" ? "L" : "R");
                 attachBagIcon(a);
+                // --- MVP: 日次シミュ（会計完了数の集計） ---
+                // 売上加算は PR-2 側で入っている想定。ここでは「serviced count」だけ拾う。
+                if (simEnabled) {
+                  simServed += 1;
+                }
                 a.phase = "toExit";
               }
             } else if (a.phase === "toExit") {
@@ -1494,13 +1561,16 @@ actorLayer.addChild(g);
 
     })();
 
+    const appInstance = appRef.current;
+    const hostEl = hostRef.current;
+
     return () => {
       cancelled = true;
-      if (appRef.current) {
-        appRef.current.destroy(true);
+      if (appInstance) {
+        appInstance.destroy(true);
         appRef.current = null;
       }
-      if (hostRef.current) hostRef.current.innerHTML = "";
+      if (hostEl) hostEl.innerHTML = "";
     };
   }, [
     layout,
@@ -1515,6 +1585,7 @@ actorLayer.addChild(g);
     lost,
     displaySlot,
     tickSeq,
+    runDaySeq,
     staff1,
     staff2,
     serviceSpeed1,
@@ -1530,9 +1601,24 @@ actorLayer.addChild(g);
           次の時間帯へ（GUI）
         </button>
 
+        <button onClick={onRunDaySim} style={{ padding: "10px 14px" }}>
+          1日シミュレーション（MVP）
+        </button>
+
         <div style={{ marginLeft: "auto", fontSize: 13 }}>
           Day <b>{day}</b> / 現在 {TIME_SLOT_LABEL[timeSlot]} / 表示 {TIME_SLOT_LABEL[displaySlot]} /
           対応 <b>{served}</b> / 離脱 <b>{lost}</b> / スタッフ L<b>{staff1}</b>・R<b>{staff2}</b> / スキル L<b>{staffSkill1.toFixed(2)}</b>・R<b>{staffSkill2.toFixed(2)}</b>
+          {" "}
+          {daySimRunning && (
+            <span style={{ marginLeft: 10, opacity: 0.9 }}>
+              / 日次: <b>実行中</b>
+            </span>
+          )}
+          {!daySimRunning && daySimResult && (
+            <span style={{ marginLeft: 10, opacity: 0.9 }}>
+              / 日次結果: spawned <b>{daySimResult.spawned}</b> / served <b>{daySimResult.served}</b>
+            </span>
+          )}
         </div>
       </div>
 
