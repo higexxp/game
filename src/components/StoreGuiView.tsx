@@ -29,12 +29,9 @@ const makePersonSprite = (src: string) => {
 };
 
 // ★SPRITE: place person by "foot" position (x,y = where feet touch the floor)
-// We treat inputs as "footX/footY". With anchor(0.5,1.0), the sprite's top is y - height,
-// so we set sprite.y = footY + height to match older "center-based" coordinates.
 const placePerson = (sp: any, footX: number, footY: number) => {
   sp.x = footX;
-  const h = (typeof sp.height === "number" && isFinite(sp.height)) ? sp.height : 0;
-  sp.y = footY + h;
+  sp.y = footY;
 };
 
 
