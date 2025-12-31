@@ -870,9 +870,6 @@ actorLayer.addChild(g);
         simReported = false;
       };
 
-      if (simEnabled) startDaySim();
-      else startAnimationForThisTick();
-
       // ---- UI text (MVP) ----
       const hudText = new PIXI.Text({
         text: "",
@@ -896,6 +893,9 @@ actorLayer.addChild(g);
           `Spawned: ${customersSpawned}`;
       };
       updateHud();
+
+      if (simEnabled) startDaySim();
+      else startAnimationForThisTick();
 
       // ---- queue helpers ----
       const baseSpeed = 190;
