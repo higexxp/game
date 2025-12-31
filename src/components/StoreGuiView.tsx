@@ -345,6 +345,13 @@ export default function StoreGuiView() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  // PR-4: 1回の実行結果（この画面では「次の時間帯へ」を押した1回分）
+  const [lastResult, setLastResult] = useState<null | {
+    served: number;
+    lost: number;
+    sales: number;
+  }>(null);
+
   // GUI tick ボタンを押した回数（初期表示は動かさない）
   const [tickSeq, setTickSeq] = useState(0);
 
@@ -366,6 +373,7 @@ export default function StoreGuiView() {
 
   const onGuiNext = () => {
     ensureSfx(sfxRef);
+    setLastResult(null);
     setTickSeq((n) => n + 1);
     advanceTime();
   };
@@ -404,6 +412,22 @@ export default function StoreGuiView() {
   const serviceSpeed1 = Math.pow(staff1, 0.7) * staffSkill1;
   const serviceSpeed2 = Math.pow(Math.max(1, staff2), 0.7) * staffSkill2;
   useEffect(() => {
+    // PR-4: このuseEffect（=このtickSeq）中だけ集計する
+    let _resultPushed = false;
+    let _servedDone = 0; // 会計完了数
+    let _lostDone = 0;   // 離脱数（欠品帰宅 + lost客）
+    let _sales = 0;      // 売上（仮）
+    const PRICE_PER_CHECKOUT = 300; // MVP仮単価
+
+    const pushResultOnce = () => {
+      if (_resultPushed) return;
+      _resultPushed = true;
+      setLastResult({
+        served: _servedDone,
+        lost: _lostDone,
+        sales: _sales,
+      });
+    };
 
     // ★POLISH: money pop (floating sales amount)
     const moneyPops: Array<{
@@ -1231,6 +1255,7 @@ actorLayer.addChild(g);
               a.g.alpha = Math.max(0, a.g.alpha - dt * 0.8);
               if (ok || a.g.alpha <= 0.05) {
                 a.phase = "done";
+                _lostDone += 1;
                 destroyActor(a);
               }
             }
@@ -1284,7 +1309,10 @@ actorLayer.addChild(g);
           if (a.phase === "oosReturn") {
             const ok = moveToward(g, centerOf(entrance).x, centerOf(entrance).y, dtMove, 1.1);
             a.g.alpha = Math.max(0, a.g.alpha - dt * 0.35);
-            if (ok || a.g.alpha <= 0.05) destroyActor(a);
+            if (ok || a.g.alpha <= 0.05) {
+              _lostDone += 1;
+              destroyActor(a);
+            }
             continue;
           }
 
@@ -1436,6 +1464,13 @@ actorLayer.addChild(g);
 
                 playCheckoutDoneSfx(sfxRef, cid === "counter_1" ? "L" : "R");
                 attachBagIcon(a);
+
+                // PR-4（PR-2最小）: 会計完了をカウントし売上加算
+                // ※すでにあなたのPR-2で売上加算が入っているなら、ここは削除/無効化してください（重複防止）
+                _servedDone += 1;
+                _sales += PRICE_PER_CHECKOUT;
+                try { spawnMoneyPop(counterPos.x, counterPos.y, PRICE_PER_CHECKOUT); } catch (e) {}
+
                 // --- MVP: 日次シミュ（会計完了数の集計） ---
                 // 売上加算は PR-2 側で入っている想定。ここでは「serviced count」だけ拾う。
                 if (simEnabled) {
@@ -1556,7 +1591,12 @@ actorLayer.addChild(g);
               anyA._beepT = 0.9 + Math.random() * 0.6;
             }
           }
-}
+        }
+
+        // PR-4: すべての客がいなくなったら、この回の結果を確定して表示
+        if (tickSeq > 0 && actors.length === 0 && (_servedDone + _lostDone) > 0) {
+          pushResultOnce();
+        }
       });
 
     })();
@@ -1621,6 +1661,28 @@ actorLayer.addChild(g);
           )}
         </div>
       </div>
+
+      {lastResult && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid #e5e7eb",
+            background: "#fff",
+            fontSize: 13,
+            display: "flex",
+            gap: 16,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <b>結果</b>
+          <span>対応（会計完了）: <b>{lastResult.served}</b></span>
+          <span>離脱: <b>{lastResult.lost}</b></span>
+          <span>売上: <b>¥{Math.round(lastResult.sales).toLocaleString("ja-JP")}</b></span>
+        </div>
+      )}
 
       <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
         レジ列は「到着順（FIFO）」で並びます。商品アイコン→吸い込み→会計完了SE→袋（ゆらゆら）まで実装済み。
