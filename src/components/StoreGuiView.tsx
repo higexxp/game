@@ -417,7 +417,6 @@ export default function StoreGuiView() {
     let _servedDone = 0; // 会計完了数
     let _lostDone = 0;   // 離脱数（欠品帰宅 + lost客）
     let _sales = 0;      // 売上（仮）
-    const PRICE_PER_CHECKOUT = 300; // MVP仮単価
 
     const pushResultOnce = () => {
       if (_resultPushed) return;
@@ -1468,8 +1467,8 @@ actorLayer.addChild(g);
                 // PR-4（PR-2最小）: 会計完了をカウントし売上加算
                 // ※すでにあなたのPR-2で売上加算が入っているなら、ここは削除/無効化してください（重複防止）
                 _servedDone += 1;
-                _sales += PRICE_PER_CHECKOUT;
-                try { spawnMoneyPop(counterPos.x, counterPos.y, PRICE_PER_CHECKOUT); } catch (e) {}
+                _sales += pricePerCheckout;
+                try { spawnMoneyPop(counterPos.x, counterPos.y, pricePerCheckout); } catch (e) {}
 
                 // --- MVP: 日次シミュ（会計完了数の集計） ---
                 // 売上加算は PR-2 側で入っている想定。ここでは「serviced count」だけ拾う。
